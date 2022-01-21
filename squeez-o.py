@@ -1,7 +1,16 @@
+#!/usr/bin/env python3
 # Compress bitmaps using clever encoding
 # Works only with 128x32 (512 bytes long) BMPs for now.
 
+from ast import arg
 import textwrap
+import argparse
+
+# Arg parser
+parser = argparse.ArgumentParser()
+parser.add_argument('-f', '--file', action='store', help='file to run the squeeze-o compression algorithm on [default = input_bytes.tmp]', default='input_bytes.tmp', type=str)
+args = parser.parse_args()
+
 my_wrap = textwrap.TextWrapper(width = 95)
 
 # TODO: This could also be modified to work with other dominant bytes: 0xFF for example.
@@ -12,7 +21,7 @@ def chunkstring(string, length):
     return (string[0+i:length+i] for i in range(0, len(string), length))
 
 # Read into individual bytes
-with open('input_bytes.tmp') as fo:
+with open(args.file) as fo:
     bytes_raw = fo.read()
 
 # Clean
