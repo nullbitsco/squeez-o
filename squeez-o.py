@@ -2,7 +2,6 @@
 # Compress bitmaps using clever encoding
 # Works only with 128x32 (512 bytes long) BMPs for now.
 
-from ast import arg
 import textwrap
 import argparse
 
@@ -11,7 +10,8 @@ parser = argparse.ArgumentParser()
 parser.add_argument('-f', '--file', action='store', help='file to run the squeeze-o compression algorithm on [default = input_bytes.tmp]', default='input_bytes.tmp', type=str)
 args = parser.parse_args()
 
-my_wrap = textwrap.TextWrapper(width = 95)
+indent = '    '
+my_wrap = textwrap.TextWrapper(width = 95, initial_indent=indent, subsequent_indent=indent)
 
 # TODO: This could also be modified to work with other dominant bytes: 0xFF for example.
 # There would need to be a flag on the firwmare side to make this work right.
@@ -55,38 +55,42 @@ block_map_str = ''
 for part in block_map_list:
     part_flipped = part[::-1]
     chunk = int(part_flipped, 2)
-    block_map_str += F"0x{chunk:02x}, "
+    block_map_str += f"0x{chunk:02x}, "
 
-'''
-Block maps and block lists look like this:
+# NEW: Block maps and block lists are now encapsulated in a struct, compressed_oled_frame_t.
+# This makes it easier to integrate into the keyboard firmware.
+typedef_header = """
+// Compressed oled data structure
+// This must be included ONCE along with the compressed data
+typedef struct {
+    const uint16_t data_len;
+    const char* block_map;
+    const char* block_list;
+} compressed_oled_frame_t;
+"""
 
-static const char PROGMEM block_map[] = {
-    0x80, 0x03, 0x00, 0x00, 0x00, 0x06, 0x00, 0x00, 0x00, 0x18, 0x00, 0x00, 0x00, 0x70, 0x00, 0x00,
-    0x00, 0xc0, 0x0f, 0x00, 0x00, 0xff, 0x19, 0x00, 0xfc, 0xf1, 0x1d, 0x00, 0x38, 0x00, 0xf3, 0x0f,
-    0xe0, 0x83, 0x0d, 0x0f, 0x00, 0xfe, 0xff, 0x03, 0x00, 0x00, 0x00, 0x0e, 0x00, 0x00, 0x00, 0x18,
-    0x00, 0x00, 0x00, 0x60, 0x00, 0x00, 0x00, 0xc0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
-};
+if 'input_bytes' in args.file:
+    frame_name = 'frame'
+else:
+    # Include input file names if not using the default
+    frame_name = args.file
 
-static const char PROGMEM block_list[] = {
-    0x07, 0x78, 0x80, 0x07, 0xf8, 0x1f, 0xe0, 0x01, 0x1e, 0xe0, 0x01, 0x1e, 0xe0, 0x80, 0x80, 0x80,
-    0x80, 0x40, 0x20, 0x10, 0x08, 0x04, 0xc2, 0xc1, 0x01, 0xc0, 0x3f, 0xe0, 0x10, 0x08, 0x08, 0x04,
-    0x02, 0x01, 0x18, 0x18, 0x03, 0x43, 0xc0, 0x03, 0x7c, 0x80, 0x03, 0x7c, 0x80, 0x13, 0x0c, 0x07,
-    0x38, 0x40, 0x20, 0x20, 0x20, 0x20, 0xc0, 0x07, 0x18, 0x20, 0x40, 0x80, 0x03, 0x03, 0x1e, 0x1e,
-    0x80, 0x60, 0x18, 0x07, 0x1f, 0x20, 0x40, 0x40, 0x20, 0x20, 0x10, 0x10, 0x10, 0x20, 0x40, 0x40,
-    0x40, 0x80, 0x80, 0x9f, 0xe0, 0x01, 0x3e, 0xc0, 0x07, 0xf8, 0x1f, 0xe0, 0x03, 0x7c
-};
-'''
+    # Sanitize - remove dots
+    frame_name = frame_name.split('.')[0] if '.' in frame_name else frame_name
+    # Sanitize - remove forward/backward slashes
+    frame_name = frame_name.split('/')[-1] if '/' in frame_name else frame_name
+    frame_name = frame_name.split('\\')[-1] if '\\' in frame_name else frame_name
 
 block_map_str = block_map_str.rstrip(', ')
-print("static const char PROGMEM block_x_map[] = {")
-print(F"{my_wrap.fill(text = block_map_str)}")
+print(typedef_header)
+print(f"static const char PROGMEM {frame_name}_map[] = {{ ")
+print(f"{my_wrap.fill(text = block_map_str)}")
 print("};")
-print()
-print("static const char PROGMEM block_x_list[] = {")
-print(F"{my_wrap.fill(text = ', '.join(block_list))}")
+print(f"static const char PROGMEM {frame_name}_list[] = {{ ")
+print(f"{my_wrap.fill(text = ', '.join(block_list))}")
 print("};")
-
+print(f"static const compressed_oled_frame_t PROGMEM {frame_name} = {{{len(bytes_list)}, {frame_name}_map, {frame_name}_list}};")
 # Calculate some statistics
 compression_ratio = (1-(len(block_map_list) + len(block_list))/len(bytes_list))*100
-print(F"Input was {len(bytes_list)} bytes, deflated block list is now {len(block_list)} bytes + {len(block_map_list)} bytes overhead")
-print(F"Space savings: {compression_ratio:.2f}%")
+print(f"// Input was {len(bytes_list)} bytes, deflated block list is now {len(block_list)} bytes + {len(block_map_list)} bytes overhead")
+print(f"// Space savings: {compression_ratio:.2f}%")
